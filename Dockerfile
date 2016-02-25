@@ -1,6 +1,6 @@
 FROM alpine:3.3
 
-ENV ICECAST_VERSION 2.4.3
+ENV ICECAST_VERSION 2.4.0
 
 RUN \
 	apk --update add build-base file libssl1.0 openssl-dev libxslt libxslt-dev libvorbis \
