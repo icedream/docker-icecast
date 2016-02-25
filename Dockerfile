@@ -19,7 +19,11 @@ RUN \
 	addgroup -g 9999 icecast &&\
 	adduser -S -D -H -u 9999 -G icecast -s /bin/false icecast
 
+ADD https://github.com/Yelp/dumb-init/releases/download/v1.0.0/dumb-init_1.0.0_amd64 /usr/local/bin/dumb-init
+RUN chmod +x /usr/local/bin/dumb-init
+
 USER 9999
 VOLUME [ "/data" ]
-CMD [ "/usr/local/bin/icecast", "-c", "/data/icecast.xml" ]
+ENTRYPOINT [ "dumb-init" ]
+CMD [ "icecast", "-c", "/data/icecast.xml" ]
 EXPOSE 8000
