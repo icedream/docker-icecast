@@ -1,29 +1,65 @@
-FROM alpine:3.3
+FROM alpine:3.16 AS share
 
-ENV ICECAST_VERSION 2.4.3
+RUN apk add --no-cache git
+WORKDIR /icecast/share/
+#COPY share/ .
+RUN git clone --depth=1 --recursive https://github.com/logue/icecast2-bootstrap-theme . && rm -rf .git
+RUN chown 9999:0 .
+RUN chmod -R a-rwx,a+rX .
 
+###
+
+FROM alpine:3.16 AS icecast-download
+
+RUN apk add --no-cache curl ca-certificates
+WORKDIR /usr/src/
+ARG ICECAST_VERSION=2.4.4
+RUN curl -L http://downloads.xiph.org/releases/icecast/icecast-${ICECAST_VERSION}.tar.gz | tar xz -v
+
+###
+
+FROM alpine:3.16 AS icecast
+
+RUN apk add --no-cache \
+	build-base file openssl-dev libxslt-dev \
+	libvorbis-dev opus-dev libogg-dev speex-dev \
+	libtheora-dev curl-dev
+
+ARG ICECAST_VERSION=2.4.4
+WORKDIR /usr/src/icecast-${ICECAST_VERSION}
+COPY --from=icecast-download /usr/src/icecast-${ICECAST_VERSION}/ .
+RUN ./configure
+RUN make
+RUN make install
+
+###
+
+FROM alpine:3.16
+
+# add runtime deps
 RUN \
-	apk --update add build-base file libssl1.0 openssl-dev libxslt libxslt-dev libvorbis \
-		libvorbis-dev opus opus-dev libogg libogg-dev speex speex-dev libtheora \
-		libtheora-dev curl curl-dev &&\
-	curl http://downloads.xiph.org/releases/icecast/icecast-${ICECAST_VERSION}.tar.gz |\
-		tar xz -C /tmp &&\
-	cd /tmp/icecast-${ICECAST_VERSION} &&\
-	./configure --enable-static &&\
-	make &&\
-	make install &&\
-	apk del build-base file openssl-dev libxslt-dev libvorbis-dev opus-dev libogg-dev \
-		speex-dev libtheora-dev curl-dev &&\
-	cd $HOME &&\
-	rm -rf /tmp/* /var/cache/apk/* &&\
-	addgroup -g 9999 icecast &&\
+	apk add --no-cache file libssl1.1 libxslt libvorbis \
+		opus libogg speex libtheora \
+		libtheora curl && \
+	rm -rf /tmp/* /var/cache/apk/*
+
+# add icecast user
+RUN \
+	addgroup -g 950 icecast &&\
 	adduser -S -D -H -u 9999 -G icecast -s /bin/false icecast
 
-ADD https://github.com/Yelp/dumb-init/releases/download/v1.0.0/dumb-init_1.0.0_amd64 /usr/local/bin/dumb-init
+# add mime.types file
+RUN apk add --no-cache mailcap && cp /etc/mime.types /etc/mime.types.keep && apk del --no-cache mailcap && mv /etc/mime.types.keep /etc/mime.types
+
+# add dumb-init
+ARG DUMB_INIT_VERSION=1.2.5
+ADD https://github.com/Yelp/dumb-init/releases/download/v${DUMB_INIT_VERSION}/dumb-init_${DUMB_INIT_VERSION}_x86_64 /usr/local/bin/dumb-init
 RUN chmod +x /usr/local/bin/dumb-init
 
+# install icecast bins
+COPY --from=icecast /usr/local/ /usr/local/
+
 USER 9999
-VOLUME [ "/data" ]
 ENTRYPOINT [ "dumb-init" ]
 CMD [ "icecast", "-c", "/data/icecast.xml" ]
 EXPOSE 8000
